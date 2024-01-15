@@ -25,9 +25,12 @@ if (fs.existsSync(dbFilePath)) {
 } else {
     console.error('Error: db.json file not found.');
 }
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, '../../', 'index.html'));
+});
 
 app.get('/notes', (req, res) => {
-    res.sendFile(path.join(__dirname, 'develop/public/js', 'notes.html'));
+    res.sendFile(path.join(__dirname, '../../', 'notes.html'));
 });
 
 app.get('/api/notes', (req, res) => {

@@ -1,147 +1,210 @@
-const express = require('express');
-const app = express();
-const PORT = process.env.PORT || 3001;
-const fs = require('fs');
-const path = require('path');
-
-app.use(express.static(path.join(__dirname, 'develop')));
-app.use(express.json());
-
-const dbFilePath = path.join(__dirname, 'db.json');
 let notes = [];
 
-if (fs.existsSync(dbFilePath)) {
-    fs.readFile(dbFilePath, 'utf8', (err, data) => {
-        if (err) {
-            console.error('Error reading db.json:', err);
-            return;
-        }
-        try {
-            notes = JSON.parse(data);
-        } catch (error) {
-            console.error('Error parsing db.json:', error);
-        }
-    });
-} else {
-    console.error('Error: db.json file not found.');
-}
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, '../../', 'index.html'));
-});
+let noteForm;
+let noteTitle;
+let noteText;
+let saveNoteBtn;
+let newNoteBtn;
+let clearBtn;
+let noteList; 
 
-app.get('/notes', (req, res) => {
-    res.sendFile(path.join(__dirname, '../../', 'notes.html'));
-});
+const show = (elem) => {
+    elem.style.display = 'inline';
+};
 
-app.get('/api/notes', (req, res) => {
-    res.json(notes);
-});
+const hide = (elem) => {
+    elem.style.display = 'none';
+};
 
-app.post('/api/notes', (req, res) => {
-    const newNote = req.body;
-    notes.push(newNote);
-    fs.writeFile(dbFilePath, JSON.stringify(notes), (err) => {
-        if (err) {
-            console.error('Error writing to db.json:', err);
-        }
-    });
+let activeNote = {};
 
-    res.json(newNote);
-});
-
-const deleteNote = (id) =>
-  fetch(`/api/notes/${id}`, {
-    method: 'DELETE',
+const getNotes = () =>
+  fetch('/api/notes', {
+    method: 'GET',
     headers: {
       'Content-Type': 'application/json',
     },
   });
 
-const getNotes = () =>
-  fetch(`http://localhost:${PORT}/api/notes`, {
-      method: 'GET',
-      headers: {
-          'Content-Type': 'application/json',
-      },
-  });
-
-const handleNoteDelete = (e) => {
-  e.stopPropagation();
-
-  const note = e.target;
-  const noteId = JSON.parse(note.parentElement.getAttribute('data-note')).id;
-
-  if (activeNote.id === noteId) {
-    activeNote = {};
-  }
-
-  deleteNote(noteId).then(() => {
-    getAndRenderNotes();
-    renderActiveNote();
-  });
-};
-
-const handleNoteView = (e) => {
-  e.preventDefault();
-  activeNote = JSON.parse(e.target.parentElement.getAttribute('data-note'));
-  renderActiveNote();
-};
-
-const renderNoteList = async () => {
-  if (typeof window !== 'undefined' && window.location.pathname === '/notes') {
-    let jsonNotes = await getNotes().then(response => response.json());
-    noteList.forEach((el) => (el.innerHTML = ''));
-    let noteListItems = [];
-
-    const createLi = (text, delBtn = true) => {
-      const liEl = document.createElement('li');
-      liEl.classList.add('list-group-item');
-
-      const spanEl = document.createElement('span');
-      spanEl.classList.add('list-item-title');
-      spanEl.innerText = text;
-      spanEl.addEventListener('click', handleNoteView);
-
-      liEl.append(spanEl);
-
-      if (delBtn) {
-        const delBtnEl = document.createElement('i');
-        delBtnEl.classList.add(
-          'fas',
-          'fa-trash-alt',
-          'float-right',
-          'text-danger',
-          'delete-note'
-        );
-        delBtnEl.addEventListener('click', handleNoteDelete);
-
-        liEl.append(delBtnEl);
-      }
-
-      return liEl;
-    };
-
-    if (jsonNotes.length === 0) {
-      noteListItems.push(createLi('No saved Notes', false));
-    }
-
-    jsonNotes.forEach((note) => {
-      const li = createLi(note.title);
-      li.dataset.note = JSON.stringify(note);
-
-      noteListItems.push(li);
+const saveNote = (note) =>
+    fetch('/api/notes', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(note),
     });
 
-    if (window.location.pathname === '/notes') {
-      noteListItems.forEach((note) => noteList[0].append(note));
+const handleNoteDelete = (event) => {
+    event.stopPropagation();
+  
+    const listItem = event.target.closest('li');
+  
+    if (listItem) {
+    const noteData = JSON.parse(listItem.dataset.note);
+  
+    if (noteData && noteData.title) {
+    fetch(`/api/notes/${noteData.id}`, {
+    method: 'DELETE',
+    headers: {
+    'Content-Type': 'application/json',
+    },
+    })
+    .then(response => {
+    if (!response.ok) {
+    throw new Error(`HTTP error! Status: ${response.status}`);
+    }
+    listItem.remove();
+    })
+    .catch(error => {
+      console.error('Error deleting note:', error);
+    });
+    } else {
+      console.error('Invalid note data:', noteData);
     }
   }
+};  
+  
+  const deleteBtns = document.querySelectorAll('.delete-note');
+  deleteBtns.forEach(btn => {
+      btn.addEventListener('click', handleNoteDelete);
+  });
+  
+    const renderNoteList = (notes) => {
+      noteList.innerHTML = '';
+  
+      if (notes.length === 0) {
+          const noNotes = document.createElement('li');
+          noNotes.classList.add('list-group-item');
+          noNotes.innerText = 'No saved notes';
+          noteList.appendChild(noNotes);
+      } else {
+          notes.forEach((note) => {
+              const li = document.createElement('li');
+              li.classList.add('list-group-item');
+              li.dataset.note = JSON.stringify(note.title);
+  
+              const span = document.createElement('span');
+              span.classList.add('list-item-title');
+              span.innerText = note.title;
+              span.addEventListener('click', handleNewNoteView);
+  
+              li.appendChild(span);
+  
+              const deleteBtn = document.createElement('i');
+              deleteBtn.classList.add('fas', 'fa-trash-alt', 'float-right', 'text-danger', 'delete-note');
+              deleteBtn.addEventListener('click', handleNoteDelete);
+  
+              li.appendChild(deleteBtn);
+  
+              noteList.appendChild(li);
+          });
+      }
+  };
+  
+  const getAndRenderNotes = () => {
+    getNotes()
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! Status: ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(notes => {
+            if (Array.isArray(notes)) {
+                renderNoteList(notes);
+            } else {
+                console.error('Invalid response format. Expected an array of notes.');
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching notes:', error);
+        });
 };
 
-const getAndRenderNotes = () => renderNoteList();
-
-app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+document.addEventListener('DOMContentLoaded', () => {
+    if (window.location.pathname === '/notes') {
+        saveNoteBtn = document.querySelector('.save-note');
+        newNoteBtn = document.querySelector('.new-note');
+        clearBtn = document.querySelector('.clear-btn');
+        noteForm = document.querySelector('.note-form');
+        noteList = document.querySelector('.list-container .list-group');
+        const deleteBtns = document.querySelectorAll('.icons');
+        deleteBtns.forEach(btn => {
+        btn.addEventListener('click', handleNoteDelete);
+        });
+        // deleteBtns = document.querySelector('.icons');
+        // deleteBtns.addEventListener('click', handleNoteDelete);
+        noteTitle = document.querySelector('.note-title');
+        noteText = document.querySelector('.note-textarea');
+        saveNoteBtn.addEventListener('click', handleNoteSave);
+        newNoteBtn.addEventListener('click', handleNewNoteView);
+        clearBtn.addEventListener('click', renderActiveNote);
+        noteForm.addEventListener('input', handleRenderBtns);
+    }
+    getAndRenderNotes();
 });
 
-getAndRenderNotes();
+const handleNoteSave = () => {
+  const newNote = {
+    title: noteTitle.value,
+    text: noteText.value,
+  };
+
+  saveNote(newNote)
+    .then(response => {
+      if (!response.ok) {
+        throw new Error(`HTTP error! Status: ${response.status}`);
+      }
+      return response();
+    })
+    .then(savedNote => {
+      console.log('Saved note:', savedNote);
+
+      if (savedNote && savedNote.id) {
+        getAndRenderNotes();
+        renderActiveNote();
+      } else {
+        console.error('Invalid response format. Expected an object with an "id" property.');
+      }
+    })
+    .catch(error => {
+      console.error('Error saving note:', error);
+    });
+};
+
+  const handleNewNoteView = (e) => {
+    activeNote = {};
+    show(clearBtn);
+    renderActiveNote();
+  };
+  
+  const handleRenderBtns = () => {
+    show(clearBtn);
+    if (!noteTitle.value.trim() && !noteText.value.trim()) {
+      hide(clearBtn);
+    } else if (!noteTitle.value.trim() || !noteText.value.trim()) {
+      hide(saveNoteBtn);
+    } else {
+      show(saveNoteBtn);
+    }
+  };
+
+  const renderActiveNote = () => {
+    hide(saveNoteBtn);
+    hide(clearBtn);
+  
+    if (activeNote.id) {
+      show(newNoteBtn);
+      noteTitle.setAttribute('readonly', true);
+      noteText.setAttribute('readonly', true);
+      noteTitle.value = activeNote.title;
+      noteText.value = activeNote.text;
+    } else {
+      hide(newNoteBtn);
+      noteTitle.removeAttribute('readonly');
+      noteText.removeAttribute('readonly');
+      noteTitle.value = '';
+      noteText.value = '';
+    }
+  };
